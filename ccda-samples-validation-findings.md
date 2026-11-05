@@ -678,3 +678,72 @@ Session 2 scratchpad: `/private/tmp/claude-502/-Users-mradwin-dev-ccda2fhir/f97e
     vendor variety.
 * **HL7/C-CDA-Examples** is already in the project's CI (the 19 full documents; ADR 0066). The converter is
   clean on it apart from known errors.
+
+## 12. The 19 `.XML` files and the 333 ONC-only documents (2026-11-05)
+
+Both sets were converted with `main` and with all 7 fixes merged, and validated with the same settings.
+All conversions exited 0.
+
+| Category | 19 `.XML` (main → fixes) | 333 ONC-only (main → fixes) |
+| --- | --- | --- |
+| Total errors | 305 → 186 | 5,756 → 3,699 (−36 %) |
+| 1 `coding: null` | 2 → 0 | 68 → 0 (30 files) |
+| 2 Patient cascade (us-core-patient profile match) | 82 → 0 | 1,151 → 31 (the 31 are the VSAC detailed-ethnicity validator limit) |
+| 2 displays in the table's systems | 37 → 0 | 649 → 27 |
+| 3 org home | 0 | 16 → 0 (13 files) |
+| 4 vitals effective | 10 → 10 (vs-1, see 12.1) | 152 → 30 (vs-1, see 12.1) |
+| 5 UDI | 0 | 8 → 0 |
+| 6 goal description | 4 → 0 | 28 → 0 (20 files) |
+| 7 identifier system/value | 0 | 17 → 0 (10 files) |
+| New errors from the fixes | none | none |
+
+So the 7 fixes carry over to new documents; nothing was tuned to the 382.
+
+### 12.1 Bug 4 has a sibling: start-only vital-sign times trip vs-1 (on `main` too)
+
+A vital sign with `<effectiveTime><low value="20150622"/></effectiveTime>` maps to
+`effectivePeriod: {"start": "2015-06-22"}`. Under a specific US Core vitals profile the validator reports
+vs-1 at `.effective.ofType(Period)`, even though vs-1 only constrains a dateTime (the same validator quirk
+as in 10.4). Counts: 15 errors in 4 of the 382 (bundles 142, 203, 204, 206); 10 in 2 of the 19
+(MDIntellisys); 30 in 6 of the ONC-only. Session 1 missed it because its pattern for bug 4 matched only
+the min-cardinality message. **Experiment (not committed):** in the `map_vitals` post-pass, turn a
+start-only `effectivePeriod` into `effectiveDateTime`. On the 6 affected files vs-1 went 25 → 0 with no
+other new errors. That is a candidate extra commit for `fix/vitals-effective-required`.
+
+### 12.2 Candidate bug 8: Condition.encounter points at an Encounter that claims no profile
+
+The header (encompassing) Encounter often has no code, so it has no `type`, and the converter
+(correctly) does not claim `us-core-encounter`. US Core Condition requires `encounter` to reference a
+`us-core-encounter`, so the **Condition** fails ("Unable to find a profile match ... us-core-encounter").
+The Encounter itself shows no error. Counts: 30 errors in 27 of the 382; 8 in the 19; 36 in 25 of the
+ONC-only. Not tried yet. Fix ideas: give the Encounter `type: [{"extension": [DAR]}]` so it can claim
+the profile (US Core `type` is 1..*), or leave out `Condition.encounter` when the target cannot claim
+`us-core-encounter` (loses data, so it should be reported).
+
+### 12.3 Other leftovers, smaller
+
+* More display rows for the table (validator-named): `v3-ObservationInterpretation#N` → "Normal"
+  (14 errors), CVX 118 → "HPV, bivalent", ICD-10-CM Z68.27 → "Body mass index [BMI] 27.0-27.9, adult".
+  They could go on PR #80.
+* ICD-10-CM codes written without the dot (`T8611`, `E039`, `E663`; NextGen MediTouch, 2 files in the
+  19, none elsewhere). This is a source problem; the converter could add the dot after the third
+  character. Low value.
+* Still unmapped, in all sets: BMI with no unit (5.1), non-canonical UCUM units, invalid NPIs
+  (us-core-16/17), observation-lab profile-match cascades (54 in ONC-only; not traced yet), and
+  Practitioner referenced where `us-core-relatedperson` is expected (8 in ONC-only; not traced).
+
+### 12.4 Why session 1 missed 12.1 and 12.2 (process lesson)
+
+1. The "Unable to find a profile match" errors were treated as one bucket, and the Patient cascade
+   (about 1,950 of 2,111) explained most of it. The bucket was never split by target profile.
+2. These errors sit on the *referring* resource. The broken target often shows no error at all, because
+   it correctly claims no profile. A scan for errors located on the resource itself cannot see them.
+3. The before/after check (`compare.py`) prints only removed and new errors. An error that is the
+   same before and after never appears.
+
+From now on: split profile-match errors by target profile and look up the target resource
+(`analyze.py` in the session 2 scratchpad does this); after each fix, read the top *remaining* errors;
+write category patterns against the constraint (any `effective[x]` / `vs-1` error), not one message.
+
+Sources: the 333 ONC-only documents were staged as `onconly/oNNN.xml` with `onconly/files.tsv` (name →
+original path inside the ONC repo or its zips) in the session 2 scratchpad.
