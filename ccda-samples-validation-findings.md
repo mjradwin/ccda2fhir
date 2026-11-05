@@ -655,3 +655,26 @@ Session 2 scratchpad: `/private/tmp/claude-502/-Users-mradwin-dev-ccda2fhir/f97e
 * `suite.sh <binary> <dir> <out>`: the same thing for a folder of XML (used for the project fixtures
   and the HL7 C-CDA-Examples corpus, then `scripts/corpus_gate.py`).
 * zsh gotcha: `$L` holding a space-separated list is not word-split; use `${=L}`.
+
+## 11. Related corpora (checked 2026-11-05)
+
+* **jddamore/ccda-samples has 401 documents, not 382.** 19 files use an upper-case `.XML` extension and
+  the case-sensitive `find -name '*.xml'` in section 8 skipped them. Use `-iname`. Those 19 have **not been
+  converted or validated** yet.
+* **onc-healthit/2015-ccda-certification-samples** (last commit 2019-04-22) is the upstream
+  (jddamore's README cites its old name `siteadmin/2015-C-CDA-Certification-Samples` and says it took what
+  was there in January 2018, "copied, unzipped, renamed, formatted and organized", with duplicates of the
+  same vendor + patient + document type removed). It is organised by testing lab (DrummondGroup, ICSA
+  Labs, InfoGard_UL, SLICompliance), and most documents sit inside zips, some of them nested 2-3 deep.
+  Unpacked: 1,213 XML files (10 unparseable), **651 distinct documents** by `ClinicalDocument/id` +
+  `effectiveTime`.
+  * **All 401 jddamore documents are in it** (397 by id and time; the other 4 are HealthGrid files that
+    ONC stores as `.txt`). 395 match even after whitespace normalisation, so jddamore's "formatting"
+    barely changed content.
+  * **About 333 distinct ONC documents are not in jddamore**, nearly all from DrummondGroup (filed under
+    "ETT Version x.y.z" folders), dated 2016-2017. They look like mostly the same vendors: the
+    duplicates jddamore removed and resubmissions across validator versions. Only a few look like new
+    vendors (rough name heuristic). As a test set they add volume and repeated documents more than new
+    vendor variety.
+* **HL7/C-CDA-Examples** is already in the project's CI (the 19 full documents; ADR 0066). The converter is
+  clean on it apart from known errors.
