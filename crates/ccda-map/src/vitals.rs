@@ -8,6 +8,7 @@
 use ccda_model::{ClinicalDocument, Statement, StatementKind};
 use serde_json::{json, Map, Value};
 
+use crate::nullflavor::data_absent_reason_extension;
 use crate::observation::{apply_performer, base, category, insert_details, insert_value, status};
 use crate::util::LOINC;
 use crate::{map_codeable_concept, Context};
@@ -63,6 +64,23 @@ pub fn map_vitals(doc: &ClinicalDocument, ctx: &mut Context) -> Vec<Value> {
             } else if s.kind == StatementKind::Observation && s.has_template(VITAL_SIGN) {
                 map_group(&[s], None, ctx, &mut out);
             }
+        }
+    }
+    // The R4 vital signs profiles (which the validator applies by LOINC code, whatever
+    // meta.profile says) and US Core require effective[x]. With no usable time the element
+    // carries a data-absent-reason instead. A Period, not a dateTime: the validator reads an
+    // extension-only dateTime as breaking vs-1 (a dateTime must be precise to the day).
+    for r in &mut out {
+        let Some(o) = r.as_object_mut() else { continue };
+        if !o.contains_key("effectiveDateTime") && !o.contains_key("effectivePeriod") {
+            ctx.report.warn(
+                "vitals.effective.missing",
+                "a vital sign has no time; effective[x] was marked unknown",
+            );
+            o.insert(
+                "effectivePeriod".into(),
+                json!({ "extension": [data_absent_reason_extension("UNK", ctx.report)] }),
+            );
         }
     }
     out
@@ -395,6 +413,25 @@ mod tests {
         assert_eq!(panel["hasMember"].as_array().unwrap().len(), 2);
         assert_eq!(panel["effectiveDateTime"], "2024-01-01");
         assert_eq!(panel["status"], "final");
+    }
+
+    #[test]
+    fn a_vital_sign_without_a_time_gets_an_absent_effective() {
+        let body = vital("29463-7", "70", "kg").replace(
+            r#"<effectiveTime value="20240101"/>"#,
+            r#"<effectiveTime nullFlavor="UNK"/>"#,
+        );
+        let (out, report) = run(&organizer(&body));
+        let w = by_code(&out, "29463-7");
+        assert!(w.get("effectiveDateTime").is_none());
+        assert_eq!(w["effectivePeriod"]["extension"][0]["valueCode"], "unknown");
+        // The panel has no time of its own and none from its member either.
+        let panel = by_code(&out, "85353-1");
+        assert!(panel["effectivePeriod"]["extension"].is_array());
+        assert!(report
+            .issues
+            .iter()
+            .any(|i| i.code == "vitals.effective.missing"));
     }
 
     #[test]

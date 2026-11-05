@@ -273,7 +273,12 @@ fn vital_signs_profile(resource: &Value) -> Option<&'static str> {
         .flatten()
         .flat_map(|c| c["coding"].as_array().into_iter().flatten())
         .any(|c| c["code"] == "vital-signs");
-    if !is_vital {
+    // Every US Core vital sign profile requires effective[x]; a data-absent-reason Period
+    // satisfies the cardinality, but the validator then reports vs-1, so no time, no claim.
+    let timed = resource["effectiveDateTime"].is_string()
+        || resource["effectivePeriod"]["start"].is_string()
+        || resource["effectivePeriod"]["end"].is_string();
+    if !is_vital || !timed {
         return None;
     }
     let has_loinc = |code: &str| {
@@ -314,9 +319,7 @@ fn vital_signs_profile(resource: &Value) -> Option<&'static str> {
         || resource["dataAbsentReason"].is_object()
         || resource["component"].is_array()
         || resource["hasMember"].is_array();
-    (complete
-        && resource["effectiveDateTime"].is_string() | resource["effectivePeriod"].is_object())
-    .then_some("us-core-vital-signs")
+    complete.then_some("us-core-vital-signs")
 }
 
 #[cfg(test)]
@@ -384,6 +387,23 @@ mod tests {
         assert!(Profiles::UsCore610.profile_for(&ok).is_some());
         let no_active = json!({ "resourceType": "Organization", "name": "X" });
         assert_eq!(Profiles::UsCore610.profile_for(&no_active), None);
+    }
+
+    #[test]
+    fn vital_sign_profile_needs_a_real_time() {
+        let mut weight = json!({
+            "resourceType": "Observation",
+            "category": [{ "coding": [{ "code": "vital-signs" }] }],
+            "code": { "coding": [{ "system": "http://loinc.org", "code": "29463-7" }] },
+            "valueQuantity": { "value": 70, "system": "http://unitsofmeasure.org", "code": "kg" },
+            "effectiveDateTime": "2024-01-01"
+        });
+        assert!(Profiles::UsCore610
+            .profile_for(&weight)
+            .is_some_and(|p| p.ends_with("us-core-body-weight")));
+        weight.as_object_mut().unwrap().remove("effectiveDateTime");
+        weight["effectivePeriod"] = json!({ "extension": [{ "valueCode": "unknown" }] });
+        assert_eq!(Profiles::UsCore610.profile_for(&weight), None);
     }
 
     #[test]
