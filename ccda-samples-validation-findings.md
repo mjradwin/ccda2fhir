@@ -747,3 +747,13 @@ write category patterns against the constraint (any `effective[x]` / `vs-1` erro
 
 Sources: the 333 ONC-only documents were staged as `onconly/oNNN.xml` with `onconly/files.tsv` (name →
 original path inside the ONC repo or its zips) in the session 2 scratchpad.
+
+### 12.5 Done after section 12 (2026-11-05)
+
+* `fix/vitals-effective-required`: commit `bf6de97` adds the 12.1 fix (start-only vital time →
+  `effectiveDateTime`, reported as `vitals.effective.start-only`). On the 12 files with the pattern
+  (4 of the 382, 2 of the 19, 6 ONC-only) vitals errors went 55 → 0; the original 19 bug-4 bundles still
+  go 61 → 0; fixtures have 0 failures; no new errors. Pushed to the fork, still no PR.
+* PR #80 (`fix/display-table`): commit `5da9ca6` adds the 3 rows from 12.3 (ObservationInterpretation N,
+  CVX 118, ICD-10-CM Z68.27). On the 8 ONC-only files that use them, their 17 errors went to 0; no new
+  errors. Pushed, and the PR description was updated.
