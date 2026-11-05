@@ -5,8 +5,10 @@ kept on the fork's `notes/ccda-samples-corpus` branch (`mjradwin/ccda2fhir`), ne
 
 > **Status (updated 2026-11-05, session 2): fix #2 is sent as PR
 > [alvinhenrick/ccda2fhir#80](https://github.com/alvinhenrick/ccda2fhir/pull/80)** (from the fork
-> `mjradwin/ccda2fhir`, branch `fix/display-table`; local remote `fork`). The other 6 branches are pushed
-> to the fork too (same names, each tracking `fork/<branch>`), but **no PRs are open for them yet**. **All 7 fixes have now been implemented and verified locally**, each on its own
+> `mjradwin/ccda2fhir`, branch `fix/display-table`; local remote `fork`). Fix #1 is
+> [#81](https://github.com/alvinhenrick/ccda2fhir/pull/81) (`fix/encounter-type-null-coding`) and fix #3 is
+> [#82](https://github.com/alvinhenrick/ccda2fhir/pull/82) (`fix/organization-home-use`). The other 4
+> branches (#4, #5, #6, #7) are pushed to the fork too, but **no PRs are open for them yet**. **All 7 fixes have now been implemented and verified locally**, each on its own
 > local branch off `main` (`26d759d`), with unit tests, clippy clean, and a before/after HL7 validator run.
 > Results, corrections to section 4 and a PR grouping recommendation are in
 > [section 10](#10-fix-experiments-session-2-2026-11-05). Read that first. Sections 4 and 6 are the
