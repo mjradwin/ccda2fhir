@@ -181,13 +181,10 @@ fn gs1_date(v: &str) -> Option<String> {
 
 fn parse_gs1(hrf: &str) -> Gs1 {
     let mut out = Gs1::default();
-    for part in hrf.split('(').skip(1) {
-        let Some((ai, value)) = part.split_once(')') else {
-            continue;
-        };
+    let mut put = |ai: &str, value: &str| {
         let value = value.trim();
         if value.is_empty() {
-            continue;
+            return;
         }
         match ai {
             "11" => out.manufacture = gs1_date(value),
@@ -196,8 +193,40 @@ fn parse_gs1(hrf: &str) -> Gs1 {
             "21" => out.serial = Some(value.to_owned()),
             _ => {}
         }
+    };
+    if hrf.starts_with('(') {
+        for part in hrf.split('(').skip(1) {
+            if let Some((ai, value)) = part.split_once(')') {
+                put(ai, value);
+            }
+        }
+    } else if plain_gs1(hrf) {
+        // The element string without parentheses, as some systems store it:
+        // `01` + 14-digit DI, then dates of six digits; lot (10) and serial (21) run to the
+        // next GS separator or the end.
+        let mut rest = &hrf[16..];
+        while rest.len() > 2 {
+            let (ai, tail) = rest.split_at(2);
+            match ai {
+                "11" | "17" if tail.len() >= 6 => {
+                    put(ai, &tail[..6]);
+                    rest = &tail[6..];
+                }
+                "10" | "21" => {
+                    let end = tail.find('\u{1d}').unwrap_or(tail.len());
+                    put(ai, &tail[..end]);
+                    rest = tail.get(end + 1..).unwrap_or("");
+                }
+                _ => break,
+            }
+        }
     }
     out
+}
+
+/// A GS1 element string without parentheses: `01` and a 14-digit DI first.
+fn plain_gs1(s: &str) -> bool {
+    s.len() >= 16 && s.starts_with("01") && s.as_bytes()[2..16].iter().all(u8::is_ascii_digit)
 }
 
 fn udi_of(p: &Participant) -> Option<String> {
@@ -207,11 +236,17 @@ fn udi_of(p: &Participant) -> Option<String> {
         .and_then(|i| i.extension.clone())
 }
 
-/// The device identifier (DI) of a GS1 UDI written as `(01)<14 digits>(...)`.
+/// The device identifier (DI) of a GS1 UDI: `(01)<14 digits>(...)`, the same element string
+/// without parentheses (`01<14 digits>...`), or the 14-digit DI on its own.
 fn device_identifier(hrf: &str) -> Option<&str> {
-    let rest = hrf.strip_prefix("(01)")?;
-    let di = rest.get(..14)?;
-    di.bytes().all(|b| b.is_ascii_digit()).then_some(di)
+    let digits = |s: &str| s.len() == 14 && s.bytes().all(|b| b.is_ascii_digit());
+    if let Some(rest) = hrf.strip_prefix("(01)") {
+        return rest.get(..14).filter(|d| digits(d));
+    }
+    if digits(hrf) {
+        return Some(hrf);
+    }
+    plain_gs1(hrf).then(|| &hrf[2..16])
 }
 
 fn map_device(
@@ -337,6 +372,23 @@ mod tests {
             out[0]["udiCarrier"][0]["carrierHRF"],
             "+H123PARTNO1234567890"
         );
+    }
+
+    #[test]
+    fn bare_di_and_plain_element_string_give_the_device_identifier() {
+        let (out, _) = run(&procedure("00643169007222"));
+        assert_eq!(
+            out[0]["udiCarrier"][0]["deviceIdentifier"],
+            "00643169007222"
+        );
+
+        let (out, _) = run(&procedure("01006431690072221716012821BLC200461H"));
+        assert_eq!(
+            out[0]["udiCarrier"][0]["deviceIdentifier"],
+            "00643169007222"
+        );
+        assert_eq!(out[0]["expirationDate"], "2016-01-28");
+        assert_eq!(out[0]["serialNumber"], "BLC200461H");
     }
 
     #[test]
