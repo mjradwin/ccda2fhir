@@ -70,8 +70,26 @@ pub fn map_vitals(doc: &ClinicalDocument, ctx: &mut Context) -> Vec<Value> {
     // meta.profile says) and US Core require effective[x]. With no usable time the element
     // carries a data-absent-reason instead. A Period, not a dateTime: the validator reads an
     // extension-only dateTime as breaking vs-1 (a dateTime must be precise to the day).
+    //
+    // A vital sign is measured at a point in time; some documents write that time as an interval
+    // with only a low. As a start-only Period it trips vs-1 in the validator (reported at
+    // `effective.ofType(Period)`), so it becomes effectiveDateTime.
     for r in &mut out {
         let Some(o) = r.as_object_mut() else { continue };
+        let start_only = o
+            .get("effectivePeriod")
+            .and_then(Value::as_object)
+            .filter(|p| p.len() == 1)
+            .and_then(|p| p.get("start"))
+            .cloned();
+        if let Some(start) = start_only {
+            ctx.report.info(
+                "vitals.effective.start-only",
+                "a vital sign time had only a low; it was mapped as effectiveDateTime",
+            );
+            o.remove("effectivePeriod");
+            o.insert("effectiveDateTime".into(), start);
+        }
         if !o.contains_key("effectiveDateTime") && !o.contains_key("effectivePeriod") {
             ctx.report.warn(
                 "vitals.effective.missing",
@@ -432,6 +450,22 @@ mod tests {
             .issues
             .iter()
             .any(|i| i.code == "vitals.effective.missing"));
+    }
+
+    #[test]
+    fn a_start_only_vital_sign_time_is_a_date_time() {
+        let body = vital("8867-4", "70", "/min").replace(
+            r#"<effectiveTime value="20240101"/>"#,
+            r#"<effectiveTime><low value="20240101"/></effectiveTime>"#,
+        );
+        let (out, report) = run(&organizer(&body));
+        let hr = by_code(&out, "8867-4");
+        assert_eq!(hr["effectiveDateTime"], "2024-01-01");
+        assert!(hr.get("effectivePeriod").is_none());
+        assert!(report
+            .issues
+            .iter()
+            .any(|i| i.code == "vitals.effective.start-only"));
     }
 
     #[test]
