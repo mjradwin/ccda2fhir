@@ -176,11 +176,12 @@ fn map_activity(s: &Statement, ctx: &mut Context, out: &mut Vec<Value>) {
     let id = ctx.next_id("encounter");
     r.insert("resourceType".into(), json!("Encounter"));
     r.insert("id".into(), json!(id));
-    let identifiers: Vec<Value> = s
-        .ids
-        .iter()
-        .filter_map(|i| map_identifier(i, ctx.terminology, ctx.report))
-        .collect();
+    let identifiers = crate::identifier::with_system_and_value(
+        s.ids
+            .iter()
+            .filter_map(|i| map_identifier(i, ctx.terminology, ctx.report))
+            .collect(),
+    );
     if !identifiers.is_empty() {
         r.insert("identifier".into(), json!(identifiers));
     }
@@ -406,6 +407,13 @@ mod tests {
             .issues
             .iter()
             .any(|i| i.code == "encounter.status.missing"));
+    }
+
+    #[test]
+    fn a_null_id_next_to_a_real_one_is_not_an_identifier() {
+        let (out, _) = run(&doc(CPT, r#"<id nullFlavor="UNK"/>"#));
+        assert_eq!(out[0]["identifier"].as_array().unwrap().len(), 1);
+        assert_eq!(out[0]["identifier"][0]["value"], "E-1");
     }
 
     #[test]

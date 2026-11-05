@@ -124,11 +124,13 @@ pub(crate) fn register_practitioner(author: &Author, ctx: &mut Context) -> Optio
     let mut resource = Map::new();
     resource.insert("resourceType".into(), json!("Practitioner"));
     resource.insert("id".into(), json!(id));
-    let identifiers: Vec<Value> = author
-        .ids
-        .iter()
-        .filter_map(|i| map_identifier(i, ctx.terminology, ctx.report))
-        .collect();
+    let identifiers = crate::identifier::with_system_and_value(
+        author
+            .ids
+            .iter()
+            .filter_map(|i| map_identifier(i, ctx.terminology, ctx.report))
+            .collect(),
+    );
     if identifiers.is_empty() {
         // US Core needs an identifier with a system and a value (1..*); the document has none.
         ctx.report.info(

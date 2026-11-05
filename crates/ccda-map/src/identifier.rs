@@ -49,6 +49,38 @@ pub fn map_identifier(
     }
 }
 
+/// Identifiers for an element whose profile needs `system` and `value` on every identifier
+/// (US Core Encounter and Practitioner). An id that was only a nullFlavor maps to an identifier
+/// that is nothing but a data-absent-reason; next to a real identifier it adds nothing and is
+/// dropped, and on its own it becomes an identifier whose system and value are marked absent.
+/// A value without a system (its root was neither an OID nor a UUID) gets its system marked absent.
+pub(crate) fn with_system_and_value(ids: Vec<Value>) -> Vec<Value> {
+    let absent_only = |i: &Value| i.get("system").is_none() && i.get("value").is_none();
+    if ids.iter().any(|i| !absent_only(i)) {
+        // A value whose root was not an OID or UUID has no system; mark it unknown.
+        return ids
+            .into_iter()
+            .filter(|i| !absent_only(i))
+            .map(|mut i| {
+                if i.get("system").is_none() {
+                    i["_system"] = json!({ "extension": [{
+                        "url": crate::nullflavor::DATA_ABSENT_REASON_URL,
+                        "valueCode": "unknown"
+                    }] });
+                }
+                i
+            })
+            .collect();
+    }
+    match ids.into_iter().find_map(|i| i.get("extension").cloned()) {
+        Some(absent) => vec![json!({
+            "_system": { "extension": absent.clone() },
+            "_value": { "extension": absent }
+        })],
+        None => Vec::new(),
+    }
+}
+
 fn map_root_and_extension(
     root: &str,
     extension: &str,
@@ -189,6 +221,30 @@ mod tests {
             null_flavor: null_flavor.map(Into::into),
             ..Identifier::default()
         }
+    }
+
+    #[test]
+    fn absent_identifiers_give_way_to_real_ones_or_mark_system_and_value() {
+        let absent = json!({ "extension": [{ "url": "dar", "valueCode": "unknown" }] });
+        let real = json!({ "system": "urn:oid:1.2.3", "value": "E-1" });
+        assert_eq!(
+            with_system_and_value(vec![absent.clone(), real.clone()]),
+            vec![real]
+        );
+        assert_eq!(
+            with_system_and_value(vec![absent.clone()]),
+            vec![json!({
+                "_system": { "extension": absent["extension"] },
+                "_value": { "extension": absent["extension"] }
+            })]
+        );
+        assert!(with_system_and_value(Vec::new()).is_empty());
+        let no_system = with_system_and_value(vec![json!({ "value": "73" })]);
+        assert_eq!(no_system[0]["value"], "73");
+        assert_eq!(
+            no_system[0]["_system"]["extension"][0]["valueCode"],
+            "unknown"
+        );
     }
 
     fn map(i: &Identifier) -> (Option<Value>, Report) {
