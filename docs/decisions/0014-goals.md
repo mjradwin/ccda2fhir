@@ -3,8 +3,9 @@
 Status: accepted. No IG page covers goals; this follows C-CDA Goal Observation (4.121) and the US Core Goal profile.
 
 - Every Goal Observation becomes a `Goal`. `description` is the observation code, or the value when the code is the
-  generic ASSERTION. A goal with neither is still emitted and reported (`goal.description.missing`); it does not claim
-  `us-core-goal`.
+  generic ASSERTION, or else the observation's `text` (resolved from the narrative). A goal with none of these is
+  still emitted and reported (`goal.description.missing`); its `description` carries a data-absent-reason, as FHIR R4
+  requires the element, and it does not claim `us-core-goal`.
 - `lifecycleStatus` from statusCode: new→proposed, active→active, completed→completed, suspended/held→on-hold,
   aborted/cancelled→cancelled, nullified→entered-in-error. Missing or unknown becomes `active` and is reported.
 - `effectiveTime` low (or value) becomes `startDate`; high becomes `target.dueDate`. Both are dates, so time is dropped.
