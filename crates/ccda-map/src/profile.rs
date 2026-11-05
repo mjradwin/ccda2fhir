@@ -71,7 +71,8 @@ impl Profiles {
                 "us-core-careteam"
             }
             "Goal" => {
-                if !resource["description"].is_object() {
+                let d = &resource["description"];
+                if !(d["text"].is_string() || d["coding"].is_array()) {
                     return None;
                 }
                 "us-core-goal"

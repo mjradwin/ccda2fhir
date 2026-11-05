@@ -11,6 +11,7 @@ use std::collections::BTreeMap;
 use crate::author::{apply_authors, AuthorFields};
 use crate::encounter_link::statement_keys;
 use crate::health_concern::keys;
+use crate::nullflavor::data_absent_reason_extension;
 use crate::{map_codeable_concept, map_datetime, map_identifier, Context};
 
 const GOAL_OBSERVATION: &str = "2.16.840.1.113883.10.20.22.4.121";
@@ -120,7 +121,8 @@ fn lifecycle(code: &str) -> Option<&'static str> {
     })
 }
 
-/// The goal's description: its code, unless that is the generic ASSERTION, then its value.
+/// The goal's description: its code, unless that is the generic ASSERTION, then its value, then
+/// its text.
 fn description(s: &Statement, ctx: &mut Context) -> Option<Value> {
     let from_code = s
         .code
@@ -136,7 +138,15 @@ fn description(s: &Statement, ctx: &mut Context) -> Option<Value> {
             .map(|v| json!({ "text": v })),
         _ => None,
     };
-    let mut d = from_code.or_else(from_value)?;
+    let Some(mut d) = from_code.or_else(from_value) else {
+        // No usable code or value: the goal's own text (resolved from the narrative) is the
+        // description, as the narrative is what the author wrote.
+        return s
+            .text
+            .as_deref()
+            .filter(|t| !t.trim().is_empty())
+            .map(|t| json!({ "text": t }));
+    };
     if d["text"].is_null() {
         if let Some(t) = s.text.as_deref().filter(|t| !t.trim().is_empty()) {
             d["text"] = json!(t);
@@ -203,9 +213,15 @@ fn map_goal(s: &Statement, ctx: &mut Context) -> Value {
             r.insert("description".into(), d);
         }
         None => {
+            // Goal.description is required by FHIR R4; with no wording at all it is marked
+            // unknown (and the Goal does not claim us-core-goal).
             ctx.report.warn(
                 "goal.description.missing",
-                "a goal has no usable code or value; description could not be set",
+                "a goal has no usable code, value or text; description was marked unknown",
+            );
+            r.insert(
+                "description".into(),
+                json!({ "extension": [data_absent_reason_extension("UNK", ctx.report)] }),
             );
         }
     }
@@ -335,6 +351,15 @@ mod tests {
     }
 
     #[test]
+    fn description_falls_back_to_the_goal_text() {
+        let (out, _) = run(
+            r#"<code nullFlavor="NI"/>"#,
+            r#"<text>Gain more energy</text><statusCode code="active"/>"#,
+        );
+        assert_eq!(out[0]["description"], json!({ "text": "Gain more energy" }));
+    }
+
+    #[test]
     fn dates_become_start_and_target() {
         let (out, _) = run(
             LOINC_GOAL,
@@ -347,7 +372,10 @@ mod tests {
     #[test]
     fn missing_description_is_reported() {
         let (out, report) = run("", r#"<statusCode code="active"/>"#);
-        assert!(out[0].get("description").is_none());
+        assert_eq!(
+            out[0]["description"]["extension"][0]["valueCode"],
+            "unknown"
+        );
         assert!(report
             .issues
             .iter()
