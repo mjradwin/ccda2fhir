@@ -518,6 +518,19 @@ mod tests {
     }
 
     #[test]
+    fn inline_original_text_is_kept_when_its_reference_does_not_resolve() {
+        let xml = r##"<ClinicalDocument xmlns="urn:hl7-org:v3">
+  <component><structuredBody><component><section>
+    <entry><observation classCode="OBS" moodCode="GOL">
+      <code nullFlavor="UNK"><originalText>Walk daily<reference value="#nowhere"/></originalText></code>
+    </observation></entry>
+  </section></component></structuredBody></component></ClinicalDocument>"##;
+        let doc = parse(xml.as_bytes()).unwrap();
+        let code = doc.sections[0].entries[0].statement.code.as_ref().unwrap();
+        assert_eq!(code.original_text.as_deref(), Some("Walk daily"));
+    }
+
+    #[test]
     fn values_are_typed_by_xsi_type() {
         let xml = r#"<ClinicalDocument xmlns="urn:hl7-org:v3" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
   <component><structuredBody><component><section>

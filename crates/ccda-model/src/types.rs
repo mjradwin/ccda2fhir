@@ -172,16 +172,15 @@ pub(crate) fn parse_code(node: &Node, narrative: &Narrative) -> Code {
         .as_ref()
         .and_then(|n| child(n, "reference"))
         .and_then(|n| attr(&n, "value"));
-    let own_text = original_text
-        .as_ref()
-        .filter(|n| child(n, "reference").is_none())
-        .and_then(text_of);
+    // The referenced narrative wins; text written inside originalText next to the reference
+    // is the fallback when the reference does not resolve.
+    let own_text = original_text.as_ref().and_then(text_of);
+    let resolved = reference.as_deref().and_then(|r| resolve(r, narrative));
     Code {
         code: attr(node, "code"),
         code_system: attr(node, "codeSystem"),
         display_name: attr(node, "displayName"),
-        original_text: own_text
-            .or_else(|| reference.as_deref().and_then(|r| resolve(r, narrative))),
+        original_text: resolved.or(own_text),
         original_text_reference: reference,
         null_flavor: attr(node, "nullFlavor"),
         translations: children(node, "translation")
